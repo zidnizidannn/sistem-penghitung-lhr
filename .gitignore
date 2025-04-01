@@ -1,0 +1,9 @@
+backend/venv/
+backend/yolovn.pt
+backend/yolov8/dataset
+backend/yolov8/predict*
+backend/yolov8/train
+backend/yolov8/train3
+backend/yolov8/train2
+
+frontend/node_modules/

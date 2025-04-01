@@ -1,0 +1,4 @@
+Jumlah kendaraan yang terdeteksi:
+- Bus: 1
+- Mobil: 10
+- Truk: 8
