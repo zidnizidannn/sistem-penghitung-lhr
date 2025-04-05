@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 import Index from './pages';
 import Dashboard from './pages/dashboard';
+import History from './pages/history';
 
 function App() {
   return (
@@ -10,6 +11,7 @@ function App() {
       <Routes>
         <Route path='/' element={<Index/>}></Route>
         <Route path='/dashboard' element={<Dashboard/>}></Route>
+        <Route path='/history' element={<History/>}></Route>
       </Routes>
     </Router>
   );

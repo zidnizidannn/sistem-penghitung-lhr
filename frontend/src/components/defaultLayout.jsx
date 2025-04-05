@@ -11,7 +11,7 @@ const DefaultLayout = ({ children }) => {
         { name: "Dashboard", path: "/dashboard", icon: <FaHome size={30} /> },
         { name: "Real-time", path: "/real-time", icon: <BiSolidCctv size={30} /> },
         { name: "Data LHR", path: "/data-lhr", icon: <FaDatabase size={30} /> },
-        { name: "Riwayat", path: "/riwayat", icon: <FaHistory size={30} /> },
+        { name: "Riwayat", path: "/history", icon: <FaHistory size={30} /> },
     ];
 
     return (

@@ -1,60 +1,76 @@
 import React, { useState, useEffect } from "react";
 import DefaultLayout from "../components/defaultLayout";
 import axios from "axios";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 const Dashboard = () => {
     const [data, setData] = useState({
         totalHariIni: 0,
-        rataRataHarian: 0,
+        rataRataHariIni: 0,
         perubahanDariKemarin: 0,
-        jamSibuk: "00.00 - 00.00",
-        jumlahKendaraanSibuk: 0
+        jamSibuk: "00:00 - 00:00",
+        jumlahKendaraanSibuk: 0,
+        grafikData: []
     });
-    
+
     useEffect(() => {
-        // Total Kendaraan Hari Ini
-        axios.get("http://localhost:5000/api/vehicle_count/today")
-        .then((response) => {
-            console.log("API Response Today:", response.data);
-            const total = response.data.reduce((sum, item) => sum + item.count, 0);
-            setData((prev) => ({ ...prev, totalHariIni: total }));
-        }).catch((error) => console.error("Error fetching vehicle count today:", error));
+        const fetchData = async () => {
+            try {
+                // 🔹 Ambil total kendaraan hari ini
+                const todayRes = await axios.get("http://localhost:5000/api/vehicle_count/summary?scope=today");
+                const totalHariIni = todayRes.data.reduce((sum, item) => sum + item.count, 0);
     
-        // Rata-rata Harian
-        axios.get("http://localhost:5000/api/vehicle_count/last_24h")
-        .then((response) => {
-            console.log("API Response Last 24h:", response.data);
-            const total = response.data.reduce((sum, item) => sum + item.count, 0);
-            setData((prev) => ({ ...prev, rataRataHarian: Math.round(total / 30) }));
-        }).catch((error) => console.error("Error fetching daily average:", error));
+                // 🔹 Ambil total kendaraan kemarin
+                const yesterdayRes = await axios.get("http://localhost:5000/api/vehicle_count/summary?scope=yesterday");
+                const totalKemarin = yesterdayRes.data.reduce((sum, item) => sum + item.count, 0);
     
-        // Perubahan dari Hari Sebelumnya
-        axios.get("http://localhost:5000/api/vehicle_count/yesterday")
-        .then((response) => {
-            console.log("API Response Yesterday:", response.data);
-            const totalKemarin = response.data.reduce((sum, item) => sum + item.count, 0);
-            setData((prev) => {
-                const perubahan = prev.totalHariIni - totalKemarin;
-                const persentasePerubahan = totalKemarin === 0 ? 0 : Math.round((perubahan / totalKemarin) * 100);
-                return { ...prev, perubahanDariKemarin: persentasePerubahan };
-            });
-        }).catch((error) => console.error("Error fetching vehicle count yesterday:", error));
-    
-        // Jam Sibuk
-        axios.get("http://localhost:5000/api/vehicle_count/history")
-        .then((response) => {
-            console.log("API Response History:", response.data);
-            if (response.data.length > 0) {
-                const busiestHour = response.data.reduce((max, item) => item.count > max.count ? item : max, { count: 0 });
-                setData((prev) => ({
-                    ...prev,
-                    jamSibuk: `${busiestHour.hour}:00 - ${busiestHour.hour + 1}:00`,
-                    jumlahKendaraanSibuk: busiestHour.count,
+                // 🔹 Ambil data grafik per jam hari ini
+                const grafikRes = await axios.get("http://localhost:5000/api/vehicle_count/time_series?type=hourly");
+                const grafikData = grafikRes.data.map(item => ({
+                    jam: `${item.hour.toString().padStart(2, "0")}:00`,
+                    kendaraan: item.count
                 }));
-            }
-        }).catch((error) => console.error("Error fetching traffic history:", error));
     
-    }, []);
+                // 🔹 Hitung rata-rata kendaraan per jam hari ini
+                const now = new Date();
+                const jamBerjalan = now.getHours() + 1;
+                const rataRataHariIni = Math.round(totalHariIni / jamBerjalan);
+    
+                // 🔹 Hitung perubahan dari kemarin
+                const perubahan = totalHariIni - totalKemarin;
+                const persentasePerubahan = totalKemarin === 0 ? 0 : Math.round((perubahan / totalKemarin) * 100);
+    
+                // 🔹 Ambil data historis (per 15 menit) untuk cari jam sibuk
+                const hourlyRes = await axios.get("http://localhost:5000/api/vehicle_count/time_series?type=hourly");
+                const hourlyData = hourlyRes.data;
+
+                let jamSibuk = "00:00 - 00:00";
+                let jumlahKendaraanSibuk = 0;
+
+                if (hourlyData.length > 0) {
+                    const busiest = hourlyData.reduce((max, item) =>
+                        item.count > max.count ? item : max, { count: 0 });
+
+                    const hourStr = busiest.hour.toString().padStart(2, "0");
+                    const nextHourStr = (busiest.hour + 1).toString().padStart(2, "0");
+                    jamSibuk = `${hourStr}:00 - ${nextHourStr}:00`;
+                    jumlahKendaraanSibuk = busiest.count;
+                }
+    
+                setData({
+                    totalHariIni,
+                    rataRataHariIni,
+                    perubahanDariKemarin: persentasePerubahan,
+                    jamSibuk,
+                    jumlahKendaraanSibuk,
+                    grafikData
+                });
+            } catch (error) {
+                console.error("Error fetching dashboard data:", error);
+            }
+        };
+        fetchData();
+    }, []);    
 
     return (
         <DefaultLayout>
@@ -66,11 +82,11 @@ const Dashboard = () => {
                     <p className="text-sm">Kendaraan</p>
                 </div>
 
-                {/* Rata-rata Harian */}
+                {/* Rata-rata Kendaraan Melintas Hari Ini */}
                 <div className="bg-gray-100 p-4 rounded shadow">
-                    <p className="text-sm">Rata-rata Harian</p>
-                    <h2 className="text-2xl font-bold">{data.rataRataHarian}</h2>
-                    <p className="text-sm">Kendaraan</p>
+                    <p className="text-sm">Rata-rata Kendaraan Melintas Hari Ini</p>
+                    <h2 className="text-2xl font-bold">{data.rataRataHariIni}</h2>
+                    <p className="text-sm">Kendaraan per jam</p>
                 </div>
 
                 {/* Perubahan dari Kemarin */}
@@ -90,18 +106,16 @@ const Dashboard = () => {
 
             {/* Grafik Lalu Lintas */}
             <div className="bg-gray-100 p-6 rounded shadow mb-6">
-                <h3 className="text-lg font-semibold mb-4">Grafik Lalu Lintas Harian</h3>
-                <div className="h-64 flex items-center justify-center">
-                    <p className="text-gray-500">Grafik akan ditampilkan di sini</p>
-                </div>
-            </div>
-
-            {/* Jenis Kendaraan */}
-            <div className="bg-gray-100 p-6 rounded shadow mb-6">
-                <h3 className="text-lg font-semibold mb-4">Distribusi Jenis Kendaraan</h3>
-                <div className="h-64 flex items-center justify-center">
-                    <p className="text-gray-500">Pie chart akan ditampilkan di sini</p>
-                </div>
+                <h3 className="text-lg font-semibold mb-4">Grafik Lalu Lintas Hari Ini</h3>
+                <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={data.grafikData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="jam" />
+                        <YAxis />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="kendaraan" stroke="#8884d8" strokeWidth={2} />
+                    </LineChart>
+                </ResponsiveContainer>
             </div>
         </DefaultLayout>
     );
