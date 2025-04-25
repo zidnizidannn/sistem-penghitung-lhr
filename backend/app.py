@@ -1,6 +1,11 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import mysql.connector
+from flask import Flask, send_file, jsonify, request
+from io import BytesIO
+from datetime import datetime
+import pandas as pd
+from report.reportGenerator import generateReport
 
 app = Flask(__name__)
 CORS(app)
@@ -112,6 +117,101 @@ def get_vehicle_details(vehicle_id):
         return jsonify(result)
     else:
         return jsonify({"error": "Vehicle not found"}), 404
+    
+@app.route('/api/vehicle_count/download', methods=['GET'])
+def download_file():
+    report_type = request.args.get('type', 'daily')
+    format_file = request.args.get('format', 'csv')
+
+    now = datetime.now()
+
+    db_config = {
+        'host': 'localhost',
+        'user': 'root',
+        'password': '',
+        'database': 'detection'
+    }
+
+    # === Jika PDF ===
+    if format_file == 'pdf':
+        try:
+            output = generateReport(report_type, db_config)
+            filename = f"laporan_lalu_lintas_{report_type}_{now.strftime('%Y%m%d')}.pdf"
+            return send_file(output, mimetype='application/pdf', as_attachment=True, download_name=filename)
+        except Exception as e:
+            print("Error saat generate PDF:", e)
+            return jsonify({"error": f"Gagal membuat PDF: {str(e)}"}), 500
+
+    # === Jika CSV ===
+    elif format_file == 'csv':
+        try:
+            # Ambil data sesuai tipe
+            conn = mysql.connector.connect(**db_config)
+            cursor = conn.cursor(dictionary=True)
+
+            if report_type == 'daily':
+                query = """
+                    SELECT HOUR(timestamp) as hour, COUNT(*) as jumlah 
+                    FROM vehicle_detections 
+                    WHERE DATE(timestamp) = CURDATE() 
+                    GROUP BY hour 
+                    ORDER BY hour
+                """
+                cursor.execute(query)
+                data = cursor.fetchall()
+                rows = []
+                for row in data:
+                    hour = f"{int(row['hour']):02d}:00"
+                    jumlah = row['jumlah']
+                    rows.append({
+                        "Jam": hour,
+                        "Jumlah Kendaraan": jumlah,
+                        "Motor": round(jumlah * 0.6),
+                        "Mobil": round(jumlah * 0.3),
+                        "Truk/Bus": round(jumlah * 0.1)
+                    })
+
+            elif report_type == 'weekly':
+                query = """
+                    SELECT DATE(timestamp) as tanggal, COUNT(*) as jumlah 
+                    FROM vehicle_detections 
+                    WHERE DATE(timestamp) >= CURDATE() - INTERVAL 7 DAY
+                    GROUP BY tanggal ORDER BY tanggal
+                """
+                cursor.execute(query)
+                data = cursor.fetchall()
+                rows = [{"Tanggal": r["tanggal"].strftime('%d-%m-%Y'), "Jumlah Kendaraan": r["jumlah"]} for r in data]
+
+            elif report_type == 'monthly':
+                query = """
+                    SELECT YEAR(timestamp) as tahun, MONTH(timestamp) as bulan, COUNT(*) as jumlah 
+                    FROM vehicle_detections 
+                    GROUP BY tahun, bulan
+                    ORDER BY tahun, bulan
+                """
+                cursor.execute(query)
+                data = cursor.fetchall()
+                rows = [{
+                    "Bulan": f"{r['bulan']:02d}-{r['tahun']}",
+                    "Jumlah Kendaraan": r["jumlah"]
+                } for r in data]
+            else:
+                return jsonify({"error": "Invalid type parameter"}), 400
+
+            # Konversi ke CSV
+            df = pd.DataFrame(rows)
+            output = BytesIO()
+            df.to_csv(output, index=False)
+            output.seek(0)
+            filename = f"laporan_lalu_lintas_{report_type}_{now.strftime('%Y%m%d')}.csv"
+            return send_file(output, mimetype='text/csv', as_attachment=True, download_name=filename)
+
+        except Exception as e:
+            print("Error saat generate CSV:", e)
+            return jsonify({"error": "Gagal membuat CSV"}), 500
+
+    else:
+        return jsonify({"error": "Format tidak dikenali"}), 400
 
 if __name__ == '__main__':
     app.run(debug=True)

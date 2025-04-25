@@ -1,6 +1,6 @@
 import React from "react";
 
-const Index = () => {
+const Main = () => {
     return (
         <div className="min-h-screen w-full flex flex-col justify-center items-center">
             <h1 className="text-4xl font-bold text-center absolute top-20">SISTEM PENGHITUNGAN <br /> LALU LINTAS HARIAN RATA-RATA</h1>
@@ -36,4 +36,4 @@ const Index = () => {
     );
 };
 
-export default Index;
+export default Main;

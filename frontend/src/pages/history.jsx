@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import DefaultLayout from "../components/defaultLayout";
 import axios from "axios";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
+import { Button, Dropdown, DropdownItem  } from "flowbite-react";
+import DownloadButton from "../components/button";
 
 const History = () => {
     const [activeView, setActiveView] = useState("daily");
@@ -23,7 +25,6 @@ const History = () => {
             let timeSeriesEndpoint = "";
             let summaryEndpoint = "";
 
-            // Set endpoints based on active view
             if (activeView === "daily") {
                 timeSeriesEndpoint = "http://localhost:5000/api/vehicle_count/time_series?type=hourly";
                 summaryEndpoint = "http://localhost:5000/api/vehicle_count/summary?scope=today";
@@ -35,10 +36,8 @@ const History = () => {
                 summaryEndpoint = "http://localhost:5000/api/vehicle_count/summary?scope=all";
             }
 
-            // Fetch time series data
             const timeSeriesRes = await axios.get(timeSeriesEndpoint);
             
-            // Process data based on active view
             let processedData = [];
             let grafikData = [];
             
@@ -54,7 +53,6 @@ const History = () => {
                     kendaraan: item.jumlah
                 }));
             } else if (activeView === "weekly") {
-                // Group by date and aggregate counts
                 const grouped = timeSeriesRes.data.reduce((acc, item) => {
                     const date = item.date;
                     if (!acc[date]) acc[date] = { date, count: 0 };
@@ -62,7 +60,6 @@ const History = () => {
                     return acc;
                 }, {});
                 
-                // Get last 7 days only
                 const last7Days = Object.values(grouped)
                     .sort((a, b) => new Date(b.date) - new Date(a.date))
                     .slice(0, 7)
@@ -76,7 +73,6 @@ const History = () => {
                 
                 grafikData = processedData;
             } else if (activeView === "monthly") {
-                // Group by month and aggregate counts
                 const grouped = timeSeriesRes.data.reduce((acc, item) => {
                     const date = new Date(item.date);
                     const monthYear = `${date.getFullYear()}-${date.getMonth()+1}`;
@@ -106,7 +102,6 @@ const History = () => {
                 grafikData = processedData;
             }
             
-            // Fetch vehicle type summary
             const summaryRes = await axios.get(summaryEndpoint);
             const totalKendaraan = summaryRes.data.reduce((sum, item) => sum + item.count, 0);
             
@@ -123,34 +118,57 @@ const History = () => {
         }
     };
 
+    const handleDownload = (type, format) => {
+        const url = `http://localhost:5000/api/vehicle_count/download?type=${type}&format=${format}`;
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', '');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };    
+
     return (
         <DefaultLayout>
             <div className="mb-6">
-                <h1 className="text-2xl font-bold mb-4">Riwayat Lalu Lintas</h1>
-                
-                {/* Toggle View Options */}
-                <div className="flex mb-6 bg-gray-200 p-1 rounded-lg w-fit">
-                    <button 
-                        className={`px-4 py-2 rounded-md ${activeView === "daily" ? "bg-white shadow" : ""}`}
-                        onClick={() => setActiveView("daily")}
-                    >
-                        Harian
-                    </button>
-                    <button 
-                        className={`px-4 py-2 rounded-md ${activeView === "weekly" ? "bg-white shadow" : ""}`}
-                        onClick={() => setActiveView("weekly")}
-                    >
-                        Mingguan
-                    </button>
-                    <button 
-                        className={`px-4 py-2 rounded-md ${activeView === "monthly" ? "bg-white shadow" : ""}`}
-                        onClick={() => setActiveView("monthly")}
-                    >
-                        Bulanan
-                    </button>
+                <div className="flex gap-4 mb-6">
+                    <div className="flex bg-gray-200 p-1 rounded-lg w-fit">
+                        <button 
+                            className={`px-4 py-2 rounded-md ${activeView === "daily" ? "bg-white shadow" : ""} cursor-pointer`}
+                            onClick={() => setActiveView("daily")}
+                        >
+                            Harian
+                        </button>
+                        <button 
+                            className={`px-4 py-2 rounded-md ${activeView === "weekly" ? "bg-white shadow" : ""} cursor-pointer`}
+                            onClick={() => setActiveView("weekly")}
+                        >
+                            Mingguan
+                        </button>
+                        <button 
+                            className={`px-4 py-2 rounded-md ${activeView === "monthly" ? "bg-white shadow" : ""} cursor-pointer`}
+                            onClick={() => setActiveView("monthly")}
+                        >
+                            Bulanan
+                        </button>
+                    </div>
+
+                    <div className="flex p-1 rounded-lg w-fit gap-4">
+                        <Dropdown label="Download CSV" color="green">
+                            <DropdownItem onClick={()=> handleDownload("daily", "csv")}>Data Harian</DropdownItem>
+                            <DropdownItem onClick={()=> handleDownload("weekly", "csv")}>Data Mingguan</DropdownItem>
+                            <DropdownItem onClick={()=> handleDownload("monthly", "csv")}>Data Bulanan</DropdownItem>
+                        </Dropdown>
+
+                        <Dropdown label="Download pdf" color="green">
+                            <DropdownItem onClick={()=> handleDownload("daily", "pdf")}>Data Harian</DropdownItem>
+                            <DropdownItem onClick={()=> handleDownload("weekly", "pdf")}>Data Mingguan</DropdownItem>
+                            <DropdownItem onClick={()=> handleDownload("monthly", "pdf")}>Data Bulanan</DropdownItem>
+                        </Dropdown>
+                    </div>
+
                 </div>
                 
-                {/* Summary Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                     <div className="bg-gray-100 p-4 rounded shadow">
                         <p className="text-sm">Total Kendaraan</p>
@@ -193,7 +211,6 @@ const History = () => {
                     </div>
                 </div>
                 
-                {/* Graph */}
                 <div className="bg-gray-100 p-6 rounded shadow mb-6">
                     <h3 className="text-lg font-semibold mb-4">
                         {activeView === "daily" && "Grafik Lalu Lintas Hari Ini"}
@@ -221,7 +238,6 @@ const History = () => {
                     </ResponsiveContainer>
                 </div>
                 
-                {/* Table */}
                 <div className="bg-gray-100 p-6 rounded shadow">
                     <h3 className="text-lg font-semibold mb-4">
                         {activeView === "daily" && "Data Lalu Lintas Per Jam"}

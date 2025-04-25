@@ -2,6 +2,7 @@ import React from "react";
 import { useState } from "react";
 import { FaHome, FaChartLine, FaDatabase, FaHistory, FaTimes, FaBars } from "react-icons/fa";
 import { BiSolidCctv } from "react-icons/bi";
+import { useLocation } from "react-router-dom"
 
 const DefaultLayout = ({ children }) => {
     const [isOpen, setIsOpen] = useState(true);
@@ -14,9 +15,26 @@ const DefaultLayout = ({ children }) => {
         { name: "Riwayat", path: "/history", icon: <FaHistory size={30} /> },
     ];
 
+    const location = useLocation();
+
+    const headTitle = () => {
+        switch (location.pathname) {
+            case "/dashboard":
+                return "Dashboard";
+            case "/real-time":
+                return "Real-time Monitoring";
+            case "/data-lhr":
+                return "Data LHR";
+            case "/history":
+                return "Riwayat Deteksi";
+            default:
+                return "Halaman";
+        }
+    };
+
     return (
-        <div className="min-h-screen flex">
-            <aside className={`w-1/6 bg-gray-200 p-4 text-lg ${isOpen ? "w-fit" : "w-fit overflow-hidden"} transition ease-in-out duration-400`}>
+        <div className="h-screen flex">
+            <aside className={`w-1/6 bg-gray-200 p-4 text-lg ${isOpen ? "w-fit" : "w-fit overflow-hidden"} transition ease-in-out duration-400 sticky`}>
                 {isOpen ? (
                     <>
                         <h1 className="font-semibold mb-4 flex items-center">
@@ -59,13 +77,13 @@ const DefaultLayout = ({ children }) => {
                     </>
                 )}
             </aside>
-            <div className="flex-1">
+            <div className="flex-1 overflow-auto">
                 {/* Header */}
-                <header className="p-6 bg-gray-200 h-fit w-full flex">
+                <header className="p-6 bg-gray-200 h-fit w-full flex sticky top-0">
                     <button className="mr-2" onClick={toggleSidebar}>
                         <FaBars />
                     </button>
-                    <h1 className="text-2xl font-semibold">Dashboard</h1>
+                    <h1 className="text-2xl font-semibold">{headTitle()}</h1>
                 </header>
 
                 {/* Konten Halaman */}

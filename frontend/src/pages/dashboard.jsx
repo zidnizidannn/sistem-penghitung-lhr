@@ -3,7 +3,7 @@ import DefaultLayout from "../components/defaultLayout";
 import axios from "axios";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
-const Dashboard = () => {
+const Dashboard = () => {  
     const [data, setData] = useState({
         totalHariIni: 0,
         rataRataHariIni: 0,
@@ -70,7 +70,7 @@ const Dashboard = () => {
             }
         };
         fetchData();
-    }, []);    
+    }, []);
 
     return (
         <DefaultLayout>
@@ -104,7 +104,6 @@ const Dashboard = () => {
                 </div>
             </div>
 
-            {/* Grafik Lalu Lintas */}
             <div className="bg-gray-100 p-6 rounded shadow mb-6">
                 <h3 className="text-lg font-semibold mb-4">Grafik Lalu Lintas Hari Ini</h3>
                 <ResponsiveContainer width="100%" height={300}>
