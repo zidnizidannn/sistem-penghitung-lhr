@@ -5,6 +5,7 @@ backend/yolov8/predict*
 backend/yolov8/train
 backend/yolov8/train3
 backend/yolov8/train2
+backend/helper/__pycache__
 
 frontend/node_modules/
 frontend/dist

@@ -1,16 +1,24 @@
 import React from "react";
-import { useState } from "react";
-import { FaHome, FaChartLine, FaDatabase, FaHistory, FaTimes, FaBars } from "react-icons/fa";
+import { useState, useEffect } from "react";
+import { FaHome, FaChartLine, FaDatabase, FaHistory, FaBars } from "react-icons/fa";
 import { BiSolidCctv } from "react-icons/bi";
-import { useLocation } from "react-router-dom"
+import { useLocation } from "react-router-dom";
 
 const DefaultLayout = ({ children }) => {
-    const [isOpen, setIsOpen] = useState(true);
+    const [isOpen, setIsOpen] = useState(() => {
+        const savedState = localStorage.getItem("sidebarOpen");
+        return savedState !== null ? JSON.parse(savedState) : true;
+    });
+
+    useEffect(() => {
+        localStorage.setItem("sidebarOpen", JSON.stringify(isOpen));
+    }, [isOpen]);
+
     const toggleSidebar = () => setIsOpen(!isOpen);
 
     const menuItems = [
         { name: "Dashboard", path: "/dashboard", icon: <FaHome size={30} /> },
-        { name: "Real-time", path: "/real-time", icon: <BiSolidCctv size={30} /> },
+        { name: "Real-time", path: "/live", icon: <BiSolidCctv size={30} /> },
         { name: "Data LHR", path: "/data-lhr", icon: <FaDatabase size={30} /> },
         { name: "Riwayat", path: "/history", icon: <FaHistory size={30} /> },
     ];
@@ -80,7 +88,7 @@ const DefaultLayout = ({ children }) => {
             <div className="flex-1 overflow-auto">
                 {/* Header */}
                 <header className="p-6 bg-gray-200 h-fit w-full flex sticky top-0">
-                    <button className="mr-2" onClick={toggleSidebar}>
+                    <button className="mr-2 cursor-pointer" onClick={toggleSidebar}>
                         <FaBars />
                     </button>
                     <h1 className="text-2xl font-semibold">{headTitle()}</h1>

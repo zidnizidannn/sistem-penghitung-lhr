@@ -16,31 +16,35 @@ const Dashboard = () => {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                // 🔹 Ambil total kendaraan hari ini
+                // total kendaraan hari ini
                 const todayRes = await axios.get("http://localhost:5000/api/vehicle_count/summary?scope=today");
                 const totalHariIni = todayRes.data.reduce((sum, item) => sum + item.count, 0);
     
-                // 🔹 Ambil total kendaraan kemarin
+                // total kendaraan kemarin
                 const yesterdayRes = await axios.get("http://localhost:5000/api/vehicle_count/summary?scope=yesterday");
                 const totalKemarin = yesterdayRes.data.reduce((sum, item) => sum + item.count, 0);
     
-                // 🔹 Ambil data grafik per jam hari ini
+                // data grafik per jam hari ini
                 const grafikRes = await axios.get("http://localhost:5000/api/vehicle_count/time_series?type=hourly");
-                const grafikData = grafikRes.data.map(item => ({
-                    jam: `${item.hour.toString().padStart(2, "0")}:00`,
-                    kendaraan: item.count
-                }));
+                const grafikData = Array.isArray(grafikRes.data)
+                    ? grafikRes.data
+                        .filter(item => item.hour !== undefined)
+                        .map(item => ({
+                        jam: `${item.hour.toString().padStart(2, "0")}:00`,
+                        kendaraan: item.total ?? 0
+                    }))
+                : [];
     
-                // 🔹 Hitung rata-rata kendaraan per jam hari ini
+                // rata-rata kendaraan per jam hari ini
                 const now = new Date();
                 const jamBerjalan = now.getHours() + 1;
                 const rataRataHariIni = Math.round(totalHariIni / jamBerjalan);
     
-                // 🔹 Hitung perubahan dari kemarin
+                // perubahan dari kemarin
                 const perubahan = totalHariIni - totalKemarin;
                 const persentasePerubahan = totalKemarin === 0 ? 0 : Math.round((perubahan / totalKemarin) * 100);
     
-                // 🔹 Ambil data historis (per 15 menit) untuk cari jam sibuk
+                // data historis (per 15 menit) untuk cari jam sibuk
                 const hourlyRes = await axios.get("http://localhost:5000/api/vehicle_count/time_series?type=hourly");
                 const hourlyData = hourlyRes.data;
 
@@ -49,8 +53,9 @@ const Dashboard = () => {
 
                 if (hourlyData.length > 0) {
                     const busiest = hourlyData.reduce((max, item) =>
-                        item.count > max.count ? item : max, { count: 0 });
-
+                        item.total > max.total ? item : max,
+                        { total: 0, hour: 0 }
+                    );
                     const hourStr = busiest.hour.toString().padStart(2, "0");
                     const nextHourStr = (busiest.hour + 1).toString().padStart(2, "0");
                     jamSibuk = `${hourStr}:00 - ${nextHourStr}:00`;

@@ -4,7 +4,7 @@ import axios from "axios";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
 import { Button, Dropdown, DropdownItem  } from "flowbite-react";
 
-const History = () => {
+const DataLhr = () => {
     const [activeView, setActiveView] = useState("daily");
     const [historyData, setHistoryData] = useState([]);
     const [summaryData, setSummaryData] = useState({
@@ -139,20 +139,6 @@ const History = () => {
         fetchHistoryData();
     }, [activeView, selectedDate, selectedYear, selectedMonth, selectedWeek, selectedMonthlyYear, selectedMonthlyMonth]);   
 
-    const handleDownloadPDF = () => {
-        let queryParams = `scope=${activeView}`; // activeView bisa 'daily', 'weekly', 'monthly'
-
-        if (activeView === "daily") {
-            queryParams += `&date=${selectedDate}`; // selectedDate dari state Anda, format YYYY-MM-DD
-        } else if (activeView === "weekly") {
-            queryParams += `&year=${selectedYear}&month=${selectedMonth}&week=${selectedWeek}`;
-        } else if (activeView === "monthly") {
-            queryParams += `&year=${selectedMonthlyYear}&month=${selectedMonthlyMonth}`;
-        }
-
-        window.open(`http://localhost:5000/api/download_report/pdf?${queryParams}`, '_blank');
-    };
-
     return (
         <DefaultLayout>
             <div className="mb-6">
@@ -162,72 +148,21 @@ const History = () => {
                             className={`px-4 py-2 rounded-md ${activeView === "daily" ? "bg-white shadow" : ""} cursor-pointer`}
                             onClick={() => setActiveView("daily")}
                         >
-                            Harian
+                            Hari Ini
                         </button>
                         <button 
                             className={`px-4 py-2 rounded-md ${activeView === "weekly" ? "bg-white shadow" : ""} cursor-pointer`}
                             onClick={() => setActiveView("weekly")}
                         >
-                            Mingguan
+                            Minggu Ini
                         </button>
                         <button 
                             className={`px-4 py-2 rounded-md ${activeView === "monthly" ? "bg-white shadow" : ""} cursor-pointer`}
                             onClick={() => setActiveView("monthly")}
                         >
-                            Bulanan
+                            Bulan Ini
                         </button>
                     </div>
-                    
-                    {activeView === "daily" && (
-                        <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="bg-gray-200 px-3 py-1 rounded-lg"/>
-                    )}
-                    {activeView === "weekly" && (
-                        <div className="flex gap-2 bg-gray-200 p-1 rounded-lg">
-                            <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
-                                {Array.from({ length: 12 }, (_, i) => (
-                                    <option key={i} value={i + 1}>{new Date(0, i).toLocaleString("default", { month: "long" })}</option>
-                                ))}
-                            </select>
-
-                            <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}>
-                                {[2023, 2024, 2025].map(year => (
-                                    <option key={year} value={year}>{year}</option>
-                                ))}
-                            </select>
-
-                            <select value={selectedWeek} onChange={(e) => setSelectedWeek(e.target.value)}>
-                                {[1, 2, 3, 4, 5].map(week => (
-                                    <option key={week} value={week}>Minggu ke-{week}</option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
-                    {activeView === "monthly" && (
-                        <div className="flex gap-2 bg-gray-200 p-1 rounded-lg">
-                            <select 
-                                value={selectedMonthlyMonth} 
-                                onChange={(e) => setSelectedMonthlyMonth(parseInt(e.target.value))}
-                            >
-                                {Array.from({ length: 12 }, (_, i) => (
-                                    <option key={i + 1} value={i + 1}>
-                                        {new Date(0, i).toLocaleString("id-ID", { month: "long" })}
-                                    </option>
-                                ))}
-                            </select>
-                            
-                            <select 
-                                value={selectedMonthlyYear} 
-                                onChange={(e) => setSelectedMonthlyYear(parseInt(e.target.value))}
-                            >
-                                {[2023, 2024, 2025, 2026].map(year => (
-                                    <option key={year} value={year}>{year}</option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
-                    <button onClick={handleDownloadPDF} className="px-4 py-2 bg-blue-500 text-white rounded">
-                        Download PDF
-                    </button>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -345,4 +280,4 @@ const History = () => {
     );
 };
 
-export default History;
+export default DataLhr;
