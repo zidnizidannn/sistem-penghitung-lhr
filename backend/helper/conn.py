@@ -7,11 +7,17 @@ def conn(query, args=(), one=False):
             host="localhost",
             user="root",
             password="",
-            database="detection"
+            database="detection",
+            autocommit=True,
         ) as db:
             with db.cursor(dictionary=True) as cursor:
                 cursor.execute(query, args)
-                result = cursor.fetchall()
-                return (result[0] if result else None) if one else result
+                
+                if query.strip().upper().startswith(('INSERT', 'UPDATE', 'DELETE')):
+                    return cursor.rowcount
+                else:
+                    result = cursor.fetchall()
+                    return (result[0] if result else None) if one else result
+                    
     except Exception as e:
         return {"error": str(e)}

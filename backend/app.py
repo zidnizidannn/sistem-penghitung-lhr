@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, Response
+from flask import Flask, jsonify, request, Response, abort
 from flask_cors import CORS
 import mysql.connector
 from flask import Flask, send_file, jsonify, request
@@ -6,7 +6,7 @@ from io import BytesIO
 from datetime import datetime, timedelta, date
 import pandas as pd
 from helper.conn import conn as query_db
-from helper.detection import run_detection, generate_frames
+from helper.detection import detect
 from threading import Thread
 from collections import defaultdict
 
@@ -108,6 +108,19 @@ def vehicle_summary():
         return jsonify({"error": "Invalid scope"}), 400
 
     result = query_db(query)
+    for item in result:
+        vtype = item['vehicle_type']
+        count = item['count']
+        if vtype == 'motorcycle':
+            item['smp'] = count * 0.5
+        elif vtype == 'car':
+            item['smp'] = count * 1
+        elif vtype == 'bus':
+            item['smp'] = count * 1.3
+        elif vtype == 'truck':
+            item['smp'] = count * 1.3
+        else:
+            item['smp'] = count
     return make_response(result)
 
 @app.route('/api/vehicle_count/time_series', methods=['GET'])
@@ -131,7 +144,7 @@ def vehicle_time_series():
         if isinstance(rows, dict) and "error" in rows:
             return make_response(rows)
         
-        result = defaultdict(lambda: {"motor": 0, "mobil": 0, "bus": 0, "truk": 0, "total": 0})
+        result = defaultdict(lambda: {"motor": 0, "mobil": 0, "bus": 0, "truk": 0, "total": 0, "smp": 0})
         
         for row in rows:
             hour = row["hour"]
@@ -140,12 +153,16 @@ def vehicle_time_series():
             
             if vtype == "motorcycle":
                 result[hour]["motor"] += count
+                result[hour]["smp"] += count * 0.5
             elif vtype == "car":
                 result[hour]["mobil"] += count
-            elif vtype in ["bus"]:
+                result[hour]["smp"] += count * 1
+            elif vtype == "bus":
                 result[hour]["bus"] += count
-            elif vtype in ["truck"]:
+                result[hour]["smp"] += count * 1.3
+            elif vtype == "truck":
                 result[hour]["truk"] += count
+                result[hour]["smp"] += count * 1.3
                 
             result[hour]["total"] += count
         
@@ -157,18 +174,70 @@ def vehicle_time_series():
                 "mobil": result[hour]["mobil"], 
                 "bus": result[hour]["bus"],
                 "truk": result[hour]["truk"],
-                "total": result[hour]["total"]
+                "total": result[hour]["total"],
+                "smp": round(result[hour]["smp"], 1)
             })
         
         return make_response(data)
     
-    elif type_ == 'last_15min':
-        query = """
-            SELECT vehicle_type, COUNT(*) as count 
-            FROM vehicle_detections 
-            WHERE timestamp >= NOW() - INTERVAL 15 MINUTE 
-            GROUP BY vehicle_type
-        """
+    # elif type_ == 'last_15min':
+    #     query = """
+    #         SELECT vehicle_type, COUNT(*) as count 
+    #         FROM vehicle_detections 
+    #         WHERE timestamp >= NOW() - INTERVAL 15 MINUTE 
+    #         GROUP BY vehicle_type
+    #     """
+    elif type_ == 'quarter':
+        try:
+            date_str = request.args.get('date')
+            if not date_str:
+                date_str = datetime.now().strftime('%Y-%m-%d')
+            
+            query = f"""
+                SELECT
+                    TIME_FORMAT(
+                        SEC_TO_TIME(
+                            FLOOR(TIME_TO_SEC(TIME(timestamp)) / 900) * 900
+                        ), 
+                        '%H:%i'
+                    ) as time_interval,
+                    vehicle_type,
+                    COUNT(*) as count
+                FROM vehicle_detections
+                WHERE DATE(timestamp) = '{date_str}'
+                GROUP BY time_interval, vehicle_type
+                ORDER BY time_interval
+            """
+            rows = query_db(query)
+
+            result = defaultdict(lambda: {"motor": 0, "mobil": 0, "bus": 0, "truk": 0, "total": 0, "smp": 0.0})
+
+            for row in rows:
+                interval = row["time_interval"]
+                vtype = row["vehicle_type"]
+                count = row["count"]
+
+                if vtype == "motorcycle":
+                    result[interval]["motor"] += count
+                    result[interval]["smp"] += count * 0.5
+                elif vtype == "car":
+                    result[interval]["mobil"] += count
+                    result[interval]["smp"] += count * 1
+                elif vtype == "bus":
+                    result[interval]["bus"] += count
+                    result[interval]["smp"] += count * 1.3
+                elif vtype == "truck":
+                    result[interval]["truk"] += count
+                    result[interval]["smp"] += count * 1.3
+
+                result[interval]["total"] += count
+
+            data = [{"time_interval": k, **v, "smp": round(v["smp"], 1)} for k, v in result.items()]
+            return make_response(data)
+
+        except Exception as e:
+            return jsonify({"error": str(e)}), 400
+
     elif type_ == 'weekly':
         try:
             year = int(request.args.get('year'))
@@ -194,7 +263,7 @@ def vehicle_time_series():
             """
             rows = query_db(query)
 
-            result = defaultdict(lambda: {"motor": 0, "mobil": 0, "bus": 0, "truk": 0, "total": 0})
+            result = defaultdict(lambda: {"motor": 0, "mobil": 0, "bus": 0, "truk": 0, "total": 0, "smp": 0.0})
 
             for row in rows:
                 date = row["date"]
@@ -203,16 +272,20 @@ def vehicle_time_series():
 
                 if vtype == "motorcycle":
                     result[date]["motor"] += count
+                    result[date]["smp"] += count * 0.5
                 elif vtype == "car":
                     result[date]["mobil"] += count
+                    result[date]["smp"] += count * 1
                 elif vtype in ["bus"]:
                     result[date]["bus"] += count
+                    result[date]["smp"] += count * 1.3
                 elif vtype in ["truck"]:
                     result[date]["truk"] += count
+                    result[date]["smp"] += count * 1.3
 
                 result[date]["total"] += count
 
-            data = [{"date": k, **v} for k, v in result.items()]
+            data = [{"date": k, **v, "smp": round(v["smp"], 1)} for k, v in result.items()]
             return make_response(data)
 
         except Exception as e:
@@ -245,7 +318,7 @@ def vehicle_time_series():
             if isinstance(rows, dict) and "error" in rows:
                 return make_response(rows)
             
-            result = defaultdict(lambda: {"motor": 0, "mobil": 0, "bus": 0, "truk": 0, "total": 0})
+            result = defaultdict(lambda: {"motor": 0, "mobil": 0, "bus": 0, "truk": 0, "total": 0, "smp": 0.0})
             
             for row in rows:
                 date = row["date"]
@@ -254,12 +327,16 @@ def vehicle_time_series():
                 
                 if vtype == "motorcycle":
                     result[date]["motor"] += count
+                    result[date]["smp"] += count * 0.5
                 elif vtype == "car":
                     result[date]["mobil"] += count
+                    result[date]["smp"] += count *1
                 elif vtype in ["bus"]:
                     result[date]["bus"] += count
+                    result[date]["smp"] += count * 1.3
                 elif vtype in ["truck"]:
                     result[date]["truk"] += count
+                    result[date]["smp"] += count * 1.3
                     
                 result[date]["total"] += count
             
@@ -275,7 +352,8 @@ def vehicle_time_series():
                     "mobil": result[date_key]["mobil"], 
                     "bus": result[date_key]["bus"],
                     "truk": result[date_key]["truk"],
-                    "total": result[date_key]["total"]
+                    "total": result[date_key]["total"],
+                    "smp": round(result[date_key]["smp"], 1)
                 })
             return make_response(data)
             
@@ -300,20 +378,18 @@ def vehicle_time_series():
 
 @app.route('/api/video_feed')
 def video_feed():
-    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    if not running['running']:
+        abort(403, "Detection is not running.")
+    return Response(detect(running),mimetype='multipart/x-mixed-replace; boundary=frame')
 
 running = {'running': False}
-detection_thread = None
 
 @app.route('/api/start_detection', methods=['POST'])
 def start_detection():
-    global detection_thread
     if running['running']:
         return jsonify({"message": "Detection already running"}), 400
 
     running['running'] = True
-    detection_thread = Thread(target=run_detection, args=(running,))
-    detection_thread.start()
     return jsonify({"message": "Detection started"}), 200
 
 @app.route('/api/stop_detection', methods=['POST'])
