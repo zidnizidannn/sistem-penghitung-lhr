@@ -9,8 +9,8 @@ const LiveDetection = () => {
         try {
             const res = await axios.post("http://localhost:5000/api/start_detection");
             console.log(res.data.message);
-            setShowStream(false); // reset dulu agar <img> reload
-            setTimeout(() => setShowStream(true), 500); // delay sedikit agar backend siap
+            setShowStream(false);
+            setTimeout(() => setShowStream(true), 500);
         } catch (err) {
             console.error(err.response?.data || err.message);
         }

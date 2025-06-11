@@ -114,62 +114,140 @@ db = mysql.connector.connect(
 )
 cursor = db.cursor()
 
-# Data jumlah kendaraan per jam berdasarkan hasil pengurangan terakhir
-data_kendaraan = {
+# Data base jumlah kendaraan per jam dengan pola realistis
+base_traffic_pattern = {
     "00:00": 270, "01:00": 146, "02:00": 110, "03:00": 77, "04:00": 166, "05:00": 253,
     "06:00": 468, "07:00": 753, "08:00": 844, "09:00": 882, "10:00": 902, "11:00": 1025,
     "12:00": 915, "13:00": 958, "14:00": 1002, "15:00": 1133, "16:00": 1170, "17:00": 1235, 
-    "18:00": 1040, "19:00": 710, "20:00": 495, "21:00": 375, "22:00": 300, "23:00": 247, "23:59": 215
+    "18:00": 1040, "19:00": 710, "20:00": 495, "21:00": 375, "22:00": 300, "23:00": 247
 }
 
-# Distribusi jenis kendaraan
-vehicle_distribution = {
-    "motorcycle": 0.65,  # 60%
-    "car": 0.28,         # 30%
-    "bus": 0.02,        # 5%
-    "truck": 0.05       # 5%
-}
+# Distribusi jenis kendaraan dengan variasi random
+def get_random_vehicle_distribution():
+    """Membuat distribusi kendaraan yang berubah-ubah setiap jam"""
+    base_motorcycle = random.uniform(0.60, 0.70)  # 60-70%
+    base_car = random.uniform(0.20, 0.35)         # 20-35%
+    base_bus = random.uniform(0.01, 0.05)         # 1-5%
+    base_truck = 1 - (base_motorcycle + base_car + base_bus)  # Sisanya
+    
+    return {
+        "motorcycle": base_motorcycle,
+        "car": base_car,
+        "bus": base_bus,
+        "truck": max(0.01, base_truck)  # Minimal 1%
+    }
 
-start_date = datetime(2025, 5, 25).date()
+def generate_random_timestamps(start_time, end_time, count):
+    """Generate timestamp acak dalam rentang waktu tertentu"""
+    timestamps = []
+    start_timestamp = start_time.timestamp()
+    end_timestamp = end_time.timestamp()
+    
+    for _ in range(count):
+        random_timestamp = random.uniform(start_timestamp, end_timestamp)
+        timestamps.append(datetime.fromtimestamp(random_timestamp))
+    
+    # Urutkan timestamp
+    timestamps.sort()
+    return timestamps
+
+def get_daily_multiplier(date):
+    """Dapatkan multiplier berdasarkan hari dalam seminggu"""
+    weekday = date.weekday()  # 0=Senin, 6=Minggu
+    
+    if weekday == 5:  # Sabtu
+        return random.uniform(1.2, 1.4)
+    elif weekday == 6:  # Minggu
+        return random.uniform(1.1, 1.3)
+    elif weekday in [0, 1, 2, 3]:  # Senin-Kamis
+        return random.uniform(0.9, 1.1)
+    else:  # Jumat
+        return random.uniform(1.0, 1.2)
+
+def get_weather_multiplier():
+    """Simulasi pengaruh cuaca terhadap lalu lintas"""
+    weather_conditions = [
+        ("sunny", 1.0, 0.7),      # Cerah - probabilitas tinggi
+        ("cloudy", 0.95, 0.2),    # Berawan - sedikit menurun
+        ("rainy", 0.7, 0.1),      # Hujan - menurun drastis
+    ]
+    
+    condition, multiplier, probability = random.choices(
+        weather_conditions, 
+        weights=[w[2] for w in weather_conditions]
+    )[0]
+    
+    # Tambahkan variasi random pada multiplier
+    return multiplier * random.uniform(0.8, 1.2)
+
+start_date = datetime(2025, 6, 3).date()
 end_date = datetime.now().date()
 
 # Generate dan masukkan data ke database untuk setiap hari
 current_date = start_date
 while current_date <= end_date:
-    # Cek apakah hari Sabtu (5) atau Minggu (6)
-    is_weekend = current_date.weekday() >= 5
-    multiplier = 1.3 if is_weekend else 1.0  # 30% lebih banyak kendaraan di akhir pekan
+    print(f"Memproses data untuk tanggal: {current_date}")
     
-    for jam, total_kendaraan in data_kendaraan.items():
-        # Tambahkan variasi acak (±10%) pada jumlah kendaraan
-        variation = random.uniform(0.9, 1.1)
-        adjusted_total = int(total_kendaraan * multiplier * variation)
+    # Dapatkan multiplier harian
+    daily_multiplier = get_daily_multiplier(current_date)
+    weather_multiplier = get_weather_multiplier()
+    
+    for jam_str, base_total in base_traffic_pattern.items():
+        # Variasi random yang lebih besar (±20-30%)
+        hourly_variation = random.uniform(0.7, 1.3)
         
-        start_time = datetime.strptime(f"{current_date} {jam}:00", "%Y-%m-%d %H:%M:%S")
+        # Variasi khusus untuk jam tertentu
+        hour = int(jam_str.split(':')[0])
+        if hour in [6, 7, 8, 17, 18, 19]:  # Rush hour
+            rush_variation = random.uniform(1.1, 1.4)
+        elif hour in [0, 1, 2, 3, 4, 5]:  # Tengah malam
+            rush_variation = random.uniform(0.5, 0.9)
+        else:
+            rush_variation = random.uniform(0.9, 1.1)
+        
+        # Hitung total kendaraan dengan semua variasi
+        final_total = int(base_total * daily_multiplier * weather_multiplier * 
+                         hourly_variation * rush_variation)
+        
+        # Pastikan minimal ada beberapa kendaraan
+        final_total = max(final_total, random.randint(5, 20))
+        
+        # Buat rentang waktu
+        start_time = datetime.combine(current_date, datetime.strptime(jam_str, "%H:%M").time())
         end_time = start_time + timedelta(hours=1) - timedelta(seconds=1)
         
-        # Buat daftar timestamp kendaraan dengan interval acak
-        time_interval = (end_time - start_time).total_seconds() / adjusted_total
-        timestamps = [start_time + timedelta(seconds=i * time_interval) for i in range(adjusted_total)]
+        # Generate timestamp acak
+        timestamps = generate_random_timestamps(start_time, end_time, final_total)
         
+        # Generate distribusi kendaraan yang berubah setiap jam
+        vehicle_dist = get_random_vehicle_distribution()
+        
+        # Insert data ke database
         for ts in timestamps:
+            # Pilih jenis kendaraan secara random
             vehicle_type = random.choices(
-                list(vehicle_distribution.keys()),
-                weights=vehicle_distribution.values()
+                list(vehicle_dist.keys()),
+                weights=list(vehicle_dist.values())
             )[0]
+            
+            # Tambahkan sedikit noise pada jenis kendaraan
+            if random.random() < 0.05:  # 5% kemungkinan tipe berubah
+                vehicle_type = random.choice(list(vehicle_dist.keys()))
             
             # Masukkan data ke database
             sql = "INSERT INTO vehicle_detections (timestamp, vehicle_type) VALUES (%s, %s)"
             cursor.execute(sql, (ts.strftime('%Y-%m-%d %H:%M:%S'), vehicle_type))
-            db.commit()
         
-        print(f"Berhasil menambahkan {adjusted_total} kendaraan untuk {current_date} jam {jam}.")
+        # Commit setiap jam untuk efisiensi
+        db.commit()
+        
+        print(f"  Jam {jam_str}: {final_total} kendaraan (Multiplier: {daily_multiplier:.2f} x {weather_multiplier:.2f})")
     
     # Pindah ke hari berikutnya
     current_date += timedelta(days=1)
+    print(f"Selesai memproses {current_date - timedelta(days=1)}\n")
 
 # Tutup koneksi database
 cursor.close()
 db.close()
-
-print("Semua data kendaraan dari 29 April 2025 hingga hari ini telah dimasukkan ke dalam database.")
+print("Data berhasil diinput ke database dengan variasi random yang realistis!")

@@ -1,4 +1,6 @@
+.vscode
 backend/venv/
+backend/coba/
 backend/yolovn.pt
 backend/yolov8/dataset
 backend/yolov8/predict*

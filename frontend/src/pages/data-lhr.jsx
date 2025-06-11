@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import DefaultLayout from "../components/defaultLayout";
 import axios from "axios";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
-import { Button, Dropdown, DropdownItem  } from "flowbite-react";
 
 const DataLhr = () => {
     const [activeView, setActiveView] = useState("daily");
@@ -10,6 +9,7 @@ const DataLhr = () => {
     const [summaryData, setSummaryData] = useState({
         totalKendaraan: 0,
         kendaraanPerJenisData: [],
+        totalSMP: 0,
         grafikData: []
     });
     const [isLoading, setIsLoading] = useState(true);
@@ -54,13 +54,14 @@ const DataLhr = () => {
                         mobil: item.mobil,
                         bus: item.bus,
                         truk: item.truk,
-                        waktuRaw: item.hour
+                        waktuRaw: item.hour,
+                        smp: item.smp
                     };
                 }).sort((a, b) => a.waktuRaw - b.waktuRaw);
     
                 grafikData = processedData.map(item => ({
                     jam: item.waktu,
-                    kendaraan: item.jumlah
+                    smp: item.smp
                 }));
     
             } else if (activeView === "weekly") {
@@ -78,13 +79,14 @@ const DataLhr = () => {
                         motor: item.motor,
                         mobil: item.mobil,
                         bus: item.bus,
-                        truk: item.truk
+                        truk: item.truk,
+                        smp: item.smp
                     }
                 });
 
                 grafikData = processedData.map(item => ({
                     waktu: item.waktu,
-                    jumlah: item.jumlah
+                    smp: item.smp
                 }));
             } else if(activeView === "monthly") {
                 processedData = timeSeriesRes.data.map(item => {
@@ -97,26 +99,29 @@ const DataLhr = () => {
                         mobil: item.mobil,
                         bus: item.bus,
                         truk: item.truk,
-                        dayRaw: day
+                        dayRaw: day,
+                        smp: item.smp
                     };
                 });
 
                 grafikData = processedData.map(item => ({
                     waktu: item.waktu,
-                    jumlah: item.jumlah
+                    smp: item.smp
                 }));
 
                 console.log("Bulanan grafikData:", grafikData);
             }
     
             const summaryRes = await axios.get(summaryEndpoint);
+            const totalSMP = summaryRes.data.reduce((sum, item) => sum + (item.smp || 0), 0);
             const totalKendaraan = summaryRes.data.reduce((sum, item) => sum + item.count, 0);
     
             setHistoryData(processedData);
             setSummaryData({
                 totalKendaraan,
                 kendaraanPerJenisData: summaryRes.data,
-                grafikData
+                grafikData,
+                totalSMP
             });
     
         } catch (error) {
@@ -168,7 +173,11 @@ const DataLhr = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                     <div className="bg-gray-100 p-4 rounded shadow">
                         <p className="text-sm">Total Kendaraan</p>
-                        <h2 className="text-2xl font-bold">{summaryData.totalKendaraan}</h2>
+                        <h2 className="text-2xl font-bold">{summaryData.totalSMP}</h2>
+                        <p className="text-sm">
+                            {activeView === "daily" && "SMP/Jam"}
+                            {(activeView === "weekly" || activeView === "monthly") && "SMP/Hari"}
+                        </p>
                     </div>
                     
                     <div className="bg-gray-100 p-4 rounded shadow">
@@ -180,10 +189,13 @@ const DataLhr = () => {
                                 : "-"}
                         </h2>
                         <p className="text-sm">
-                            {summaryData.kendaraanPerJenisData.length > 0 
-                                ? `${summaryData.kendaraanPerJenisData.reduce((max, item) => 
-                                    item.count > max.count ? item : max, { count: 0 }).count} kendaraan` 
-                                : ""}
+                            {summaryData.kendaraanPerJenisData.length > 0 && (() => {
+                                const terbanyak = summaryData.kendaraanPerJenisData.reduce(
+                                    (max, item) => item.count > max.count ? item : max,
+                                    { count: 0, smp: 0 }
+                                );
+                                return `${terbanyak.count} kendaraan / ${terbanyak.smp?.toFixed(1)} SMP`;
+                            })()}
                         </p>
                     </div>
                     
@@ -191,7 +203,7 @@ const DataLhr = () => {
                         <p className="text-sm">Rata-rata Kendaraan</p>
                         <h2 className="text-2xl font-bold">
                             {historyData.length > 0 
-                                ? Math.round(summaryData.totalKendaraan / historyData.length) 
+                                ? Math.round(summaryData.totalSMP / historyData.length) 
                                 : 0}
                         </h2>
                         <p className="text-sm">
@@ -213,7 +225,7 @@ const DataLhr = () => {
                                 <XAxis dataKey="jam" />
                                 <YAxis />
                                 <Tooltip />
-                                <Line type="monotone" dataKey="kendaraan" stroke="#8884d8" strokeWidth={2} />
+                                <Line type="monotone" dataKey="smp" name="SMP" stroke="#8884d8" strokeWidth={2} />
                             </LineChart>
                         ) : (
                             <BarChart data={summaryData.grafikData}>
@@ -221,7 +233,7 @@ const DataLhr = () => {
                                 <XAxis dataKey="waktu" />
                                 <YAxis />
                                 <Tooltip />
-                                <Bar dataKey="jumlah" name="Jumlah Kendaraan" fill="#8884d8" />
+                                <Bar dataKey="smp" name="SMP" fill="#8884d8" />
                             </BarChart>
                         )}
                     </ResponsiveContainer>
@@ -231,7 +243,7 @@ const DataLhr = () => {
                     <h3 className="text-lg font-semibold mb-4">
                         {activeView === "daily" && "Data Lalu Lintas Per Jam"}
                         {activeView === "weekly" && "Data Lalu Lintas 7 Hari Terakhir"}
-                        {activeView === "monthly" && `Data Lalu Lintas ${new Date(0, selectedMonthlyMonth - 1).toLocaleString("id-ID", { month: "long" })} ${selectedMonthlyYear}`}
+                        {activeView === "monthly" && `Data Lalu Lintas Bulan ini`}
                     </h3>
                     
                     <div className="overflow-x-auto">
@@ -248,6 +260,11 @@ const DataLhr = () => {
                                     <th className="py-3 px-6 text-left">Mobil</th>
                                     <th className="py-3 px-6 text-left">Bus</th>
                                     <th className="py-3 px-6 text-left">Truk</th>
+                                    <th className="py-3 px-6 text-left">
+                                        {activeView === "daily" && "SMP/Jam"}
+                                        {activeView === "weekly" && "SMP/Hari"}
+                                        {activeView === "monthly" && "SMP/Hari"}
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody className="text-gray-600 text-sm">
@@ -268,6 +285,7 @@ const DataLhr = () => {
                                             <td className="py-3 px-6 text-left">{item.mobil}</td>
                                             <td className="py-3 px-6 text-left">{item.bus}</td>
                                             <td className="py-3 px-6 text-left">{item.truk}</td>
+                                            <td className="py-3 px-6 text-left">{item.smp}</td>
                                         </tr>
                                     ))
                                 )}

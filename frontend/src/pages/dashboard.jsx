@@ -18,11 +18,11 @@ const Dashboard = () => {
             try {
                 // total kendaraan hari ini
                 const todayRes = await axios.get("http://localhost:5000/api/vehicle_count/summary?scope=today");
-                const totalHariIni = todayRes.data.reduce((sum, item) => sum + item.count, 0);
+                const totalHariIni = todayRes.data.reduce((sum, item) => sum + (item.smp || 0), 0);
     
                 // total kendaraan kemarin
                 const yesterdayRes = await axios.get("http://localhost:5000/api/vehicle_count/summary?scope=yesterday");
-                const totalKemarin = yesterdayRes.data.reduce((sum, item) => sum + item.count, 0);
+                const totalKemarin = yesterdayRes.data.reduce((sum, item) => sum + (item.smp || 0), 0);
     
                 // data grafik per jam hari ini
                 const grafikRes = await axios.get("http://localhost:5000/api/vehicle_count/time_series?type=hourly");
@@ -31,7 +31,7 @@ const Dashboard = () => {
                         .filter(item => item.hour !== undefined)
                         .map(item => ({
                         jam: `${item.hour.toString().padStart(2, "0")}:00`,
-                        kendaraan: item.total ?? 0
+                        smp: item.total ?? 0
                     }))
                 : [];
     
@@ -53,8 +53,8 @@ const Dashboard = () => {
 
                 if (hourlyData.length > 0) {
                     const busiest = hourlyData.reduce((max, item) =>
-                        item.total > max.total ? item : max,
-                        { total: 0, hour: 0 }
+                        item.smp > max.smp ? item : max,
+                        { smp: 0, hour: 0 }
                     );
                     const hourStr = busiest.hour.toString().padStart(2, "0");
                     const nextHourStr = (busiest.hour + 1).toString().padStart(2, "0");
@@ -84,7 +84,7 @@ const Dashboard = () => {
                 <div className="bg-gray-100 p-4 rounded shadow">
                     <p className="text-sm">Total Kendaraan Hari Ini</p>
                     <h2 className="text-2xl font-bold">{data.totalHariIni}</h2>
-                    <p className="text-sm">Kendaraan</p>
+                    <p className="text-sm">SMP/Jam</p>
                 </div>
 
                 {/* Rata-rata Kendaraan Melintas Hari Ini */}
@@ -117,7 +117,7 @@ const Dashboard = () => {
                         <XAxis dataKey="jam" />
                         <YAxis />
                         <Tooltip />
-                        <Line type="monotone" dataKey="kendaraan" stroke="#8884d8" strokeWidth={2} />
+                        <Line type="monotone" dataKey="smp" stroke="#8884d8" strokeWidth={2} />
                     </LineChart>
                 </ResponsiveContainer>
             </div>
