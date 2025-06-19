@@ -26,7 +26,7 @@ const LiveDetection = () => {
             setShowStream(false);
 
             const token = localStorage.getItem('token');
-            setVideoSrc(`${api}/video_feed?token=${token}`);
+            setVideoSrc(`http://localhost:5000/api/video_feed?token=${token}`);
 
             setTimeout(() => setShowStream(true), 500);
         } catch (err) {

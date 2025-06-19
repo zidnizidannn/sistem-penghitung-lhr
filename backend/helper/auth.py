@@ -22,9 +22,9 @@ def decode_token(token):
         payload = decode(token, SECRET_KEY, algorithms=['HS256'])
         return payload
     except exceptions.ExpiredSignatureError:
-        return None  # Token expired
+        return None
     except exceptions.InvalidTokenError:
-        return None  # Token invalid
+        return None
 
 def token_required(f):
     @wraps(f)
@@ -34,6 +34,9 @@ def token_required(f):
         if 'Authorization' in request.headers:
             token = request.headers['Authorization'].split()[1]
             
+        if not token:
+            token = request.args.get('token')
+        
         if not token:
             return jsonify({"error": "Token tidak ditemukan"}), 401
             
