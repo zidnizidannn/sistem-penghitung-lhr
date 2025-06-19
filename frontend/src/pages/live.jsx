@@ -4,25 +4,46 @@ import DefaultLayout from "../components/defaultLayout";
 
 const LiveDetection = () => {
     const [showStream, setShowStream] = useState(false);
+    const [videoSrc, setVideoSrc] = useState("");
+    const [error, setError] = useState("");
+
+    const api = axios.create({
+        baseURL: 'http://localhost:5000/api',
+    });
+
+    api.interceptors.request.use((config) => {
+        const token = localStorage.getItem('token');
+        if (token) {
+            config.headers['Authorization'] = `Bearer ${token}`;
+        }
+        return config;
+    });
 
     const handleStartDetection = async () => {
         try {
-            const res = await axios.post("http://localhost:5000/api/start_detection");
+            const res = await api.post("/start_detection");
             console.log(res.data.message);
             setShowStream(false);
+
+            const token = localStorage.getItem('token');
+            setVideoSrc(`${api}/video_feed?token=${token}`);
+
             setTimeout(() => setShowStream(true), 500);
         } catch (err) {
             console.error(err.response?.data || err.message);
+            setError("Gagal memulai deteksi");
         }
     };
 
     const handleStopDetection = async () => {
         try {
-            const res = await axios.post("http://localhost:5000/api/stop_detection");
+            const res = await api.post("/stop_detection");
             console.log(res.data.message);
+            setVideoSrc("");
             setShowStream(false);
         } catch (err) {
             console.error(err.response?.data || err.message);
+            setError("Gagal menghentikan deteksi");
         }
     };
 
@@ -36,7 +57,7 @@ const LiveDetection = () => {
                 <div className="w-full max-w-4xl bg-white rounded-lg shadow-md p-4">
                     <div className="w-full overflow-hidden rounded-md">
                         {showStream && (
-                            <img key={Date.now()} src="http://localhost:5000/api/video_feed" alt="Live Detection Stream" className="w-full h-auto rounded-md border"/>
+                            <img key={Date.now()} src={videoSrc} alt="Live Detection Stream" className="w-full h-auto rounded-md border" onError={()=> {setError("Gagal memuat video."); setShowStream("")}}/>
                         )}
                     </div>
                 </div>

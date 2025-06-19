@@ -9,9 +9,11 @@ from helper.conn import conn as query_db
 from helper.detection import detect
 from threading import Thread
 from collections import defaultdict
+from werkzeug.security import check_password_hash
+from helper.auth import *
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, supports_credentials=True)
 
 # Fungsi bantu response JSON
 def make_response(data):
@@ -19,67 +21,253 @@ def make_response(data):
         return jsonify(data), 500
     return jsonify(data)
 
-@app.route('/api/vehicle_count/summary', methods=['GET'])
-def vehicle_summary():
-    scope = request.args.get('scope', 'today')
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+    
+    if not username or not password:
+        return jsonify({"error": "Username dan password diperlukan"}), 400
+    
+    # Cek user di database
+    query = "SELECT * FROM users WHERE username = %s"
+    user = query_db(query, (username,), one=True)
+    
+    if not user or not check_password_hash(user['password'], password):
+        return jsonify({"error": "Username atau password salah"}), 401
+    
+    # Buat token JWT
+    token = create_token(username)
+    return jsonify({"token": token}), 200
 
-    if scope == 'today':
-        query = """
-            SELECT vehicle_type, COUNT(*) as count 
-            FROM vehicle_detections 
-            WHERE DATE(timestamp) = CURDATE() 
-            GROUP BY vehicle_type
-        """
-    elif scope == 'yesterday':
-        query = """
-            SELECT vehicle_type, COUNT(*) as count 
-            FROM vehicle_detections 
-            WHERE DATE(timestamp) = CURDATE() - INTERVAL 1 DAY 
-            GROUP BY vehicle_type
-        """
-    elif scope == 'all':
-        query = """
-            SELECT vehicle_type, COUNT(*) as count 
-            FROM vehicle_detections 
-            GROUP BY vehicle_type
-            
-        """
-    elif scope == 'weekly':
-        query = """
-            SELECT vehicle_type, COUNT(*) as count 
-            FROM vehicle_detections 
-            WHERE timestamp >= CURDATE() - INTERVAL 7 DAY
-            GROUP BY vehicle_type
-        """
-    elif scope == 'monthly':
-        try:
-            year = int(request.args.get('year', datetime.now().year))
-            month = int(request.args.get('month', datetime.now().month))
-            
-            query = f"""
+@app.route('/api/vehicle_count/summary', methods=['GET'])
+@token_required
+def vehicle_summary(payload):
+    try:
+        scope = request.args.get('scope', 'today')
+
+        if scope == 'today':
+            query = """
                 SELECT vehicle_type, COUNT(*) as count 
                 FROM vehicle_detections 
-                WHERE YEAR(timestamp) = {year} AND MONTH(timestamp) = {month}
+                WHERE DATE(timestamp) = CURDATE() 
                 GROUP BY vehicle_type
             """
-            
-        except Exception as e:
-            return jsonify({"error": f"Invalid input: {str(e)}"}), 400
-    elif scope == 'custom':
-        date_str = request.args.get('date')
-        if date_str:
+        elif scope == 'yesterday':
+            query = """
+                SELECT vehicle_type, COUNT(*) as count 
+                FROM vehicle_detections 
+                WHERE DATE(timestamp) = CURDATE() - INTERVAL 1 DAY 
+                GROUP BY vehicle_type
+            """
+        elif scope == 'all':
+            query = """
+                SELECT vehicle_type, COUNT(*) as count 
+                FROM vehicle_detections 
+                GROUP BY vehicle_type
+                
+            """
+        elif scope == 'weekly':
+            query = """
+                SELECT vehicle_type, COUNT(*) as count 
+                FROM vehicle_detections 
+                WHERE timestamp >= CURDATE() - INTERVAL 7 DAY
+                GROUP BY vehicle_type
+            """
+        elif scope == 'monthly':
             try:
-                datetime.strptime(date_str, '%Y-%m-%d')
-            except:
-                return jsonify({"error": "Invalid date format"}), 400
+                year = int(request.args.get('year', datetime.now().year))
+                month = int(request.args.get('month', datetime.now().month))
+                
+                query = f"""
+                    SELECT vehicle_type, COUNT(*) as count 
+                    FROM vehicle_detections 
+                    WHERE YEAR(timestamp) = {year} AND MONTH(timestamp) = {month}
+                    GROUP BY vehicle_type
+                """
+                
+            except Exception as e:
+                return jsonify({"error": f"Invalid input: {str(e)}"}), 400
+        elif scope == 'custom':
+            date_str = request.args.get('date')
+            if date_str:
+                try:
+                    datetime.strptime(date_str, '%Y-%m-%d')
+                except:
+                    return jsonify({"error": "Invalid date format"}), 400
+
+                query = f"""
+                    SELECT vehicle_type, COUNT(*) as count 
+                    FROM vehicle_detections 
+                    WHERE DATE(timestamp) = '{date_str}' 
+                    GROUP BY vehicle_type
+                """
+            elif all(param in request.args for param in ['year', 'month', 'week']):
+                try:
+                    year = int(request.args.get('year'))
+                    month = int(request.args.get('month'))
+                    week = int(request.args.get('week'))
+
+                    start_day = (week - 1) * 7 + 1
+                    start_date = datetime(year, month, start_day)
+
+                    try:
+                        end_date = datetime(year, month, start_day + 6)
+                    except ValueError:
+                        if month == 12:
+                            end_date = datetime(year + 1, 1, 1) - timedelta(days=1)
+                        else:
+                            end_date = datetime(year, month + 1, 1) - timedelta(days=1)
+
+                    query = f"""
+                        SELECT vehicle_type, COUNT(*) as count 
+                        FROM vehicle_detections 
+                        WHERE DATE(timestamp) BETWEEN '{start_date.strftime('%Y-%m-%d')}' AND '{end_date.strftime('%Y-%m-%d')}'
+                        GROUP BY vehicle_type
+                    """
+                except Exception as e:
+                    return jsonify({"error": f"Invalid input: {str(e)}"}), 400
+        else:
+            return jsonify({"error": "Invalid scope"}), 400
+
+        result = query_db(query)
+        for item in result:
+            vtype = item['vehicle_type']
+            count = item['count']
+            if vtype == 'motorcycle':
+                item['smp'] = count * 0.5
+            elif vtype == 'car':
+                item['smp'] = count * 1
+            elif vtype == 'bus':
+                item['smp'] = count * 1.3
+            elif vtype == 'truck':
+                item['smp'] = count * 1.3
+            else:
+                item['smp'] = count
+        return make_response(result)
+    except Exception as e:
+        app.logger.error(f"Error in vehicle_summary: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route('/api/vehicle_count/time_series', methods=['GET'])
+@token_required
+def vehicle_time_series(payload):
+    try:
+        type_ = request.args.get('type', 'hourly')
+
+        if type_ == 'hourly':
+            date_str = request.args.get('date')
+            if not date_str:
+                date_str = datetime.now().strftime('%Y-%m-%d')
 
             query = f"""
-                SELECT vehicle_type, COUNT(*) as count 
+                SELECT HOUR(timestamp) as hour, vehicle_type, COUNT(*) as count 
                 FROM vehicle_detections 
                 WHERE DATE(timestamp) = '{date_str}' 
-                GROUP BY vehicle_type
+                GROUP BY HOUR(timestamp)
+                ORDER BY hour
             """
-        elif all(param in request.args for param in ['year', 'month', 'week']):
+            rows = query_db(query)
+        
+            if isinstance(rows, dict) and "error" in rows:
+                return make_response(rows)
+            
+            result = defaultdict(lambda: {"motor": 0, "mobil": 0, "bus": 0, "truk": 0, "total": 0, "smp": 0})
+            
+            for row in rows:
+                hour = row["hour"]
+                vtype = row["vehicle_type"]
+                count = row["count"]
+                
+                if vtype == "motorcycle":
+                    result[hour]["motor"] += count
+                    result[hour]["smp"] += count * 0.5
+                elif vtype == "car":
+                    result[hour]["mobil"] += count
+                    result[hour]["smp"] += count * 1
+                elif vtype == "bus":
+                    result[hour]["bus"] += count
+                    result[hour]["smp"] += count * 1.3
+                elif vtype == "truck":
+                    result[hour]["truk"] += count
+                    result[hour]["smp"] += count * 1.3
+                    
+                result[hour]["total"] += count
+            
+            data = []
+            for hour in range(24):
+                data.append({
+                    "hour": hour,
+                    "motor": result[hour]["motor"],
+                    "mobil": result[hour]["mobil"], 
+                    "bus": result[hour]["bus"],
+                    "truk": result[hour]["truk"],
+                    "total": result[hour]["total"],
+                    "smp": round(result[hour]["smp"], 1)
+                })
+            
+            return make_response(data)
+        
+        # elif type_ == 'last_15min':
+        #     query = """
+        #         SELECT vehicle_type, COUNT(*) as count 
+        #         FROM vehicle_detections 
+        #         WHERE timestamp >= NOW() - INTERVAL 15 MINUTE 
+        #         GROUP BY vehicle_type
+        #     """
+        elif type_ == 'quarter':
+            try:
+                date_str = request.args.get('date')
+                if not date_str:
+                    date_str = datetime.now().strftime('%Y-%m-%d')
+                
+                query = f"""
+                    SELECT
+                        TIME_FORMAT(
+                            SEC_TO_TIME(
+                                FLOOR(TIME_TO_SEC(TIME(timestamp)) / 900) * 900
+                            ), 
+                            '%H:%i'
+                        ) as time_interval,
+                        vehicle_type,
+                        COUNT(*) as count
+                    FROM vehicle_detections
+                    WHERE DATE(timestamp) = '{date_str}'
+                    GROUP BY time_interval, vehicle_type
+                    ORDER BY time_interval
+                """
+                rows = query_db(query)
+
+                result = defaultdict(lambda: {"motor": 0, "mobil": 0, "bus": 0, "truk": 0, "total": 0, "smp": 0.0})
+
+                for row in rows:
+                    interval = row["time_interval"]
+                    vtype = row["vehicle_type"]
+                    count = row["count"]
+
+                    if vtype == "motorcycle":
+                        result[interval]["motor"] += count
+                        result[interval]["smp"] += count * 0.5
+                    elif vtype == "car":
+                        result[interval]["mobil"] += count
+                        result[interval]["smp"] += count * 1
+                    elif vtype == "bus":
+                        result[interval]["bus"] += count
+                        result[interval]["smp"] += count * 1.3
+                    elif vtype == "truck":
+                        result[interval]["truk"] += count
+                        result[interval]["smp"] += count * 1.3
+
+                    result[interval]["total"] += count
+
+                data = [{"time_interval": k, **v, "smp": round(v["smp"], 1)} for k, v in result.items()]
+                return make_response(data)
+
+            except Exception as e:
+                return jsonify({"error": str(e)}), 400
+
+        elif type_ == 'weekly':
             try:
                 year = int(request.args.get('year'))
                 month = int(request.args.get('month'))
@@ -87,7 +275,6 @@ def vehicle_summary():
 
                 start_day = (week - 1) * 7 + 1
                 start_date = datetime(year, month, start_day)
-
                 try:
                     end_date = datetime(year, month, start_day + 6)
                 except ValueError:
@@ -97,311 +284,171 @@ def vehicle_summary():
                         end_date = datetime(year, month + 1, 1) - timedelta(days=1)
 
                 query = f"""
-                    SELECT vehicle_type, COUNT(*) as count 
-                    FROM vehicle_detections 
+                    SELECT DATE(timestamp) as date,vehicle_type,COUNT(*) as count
+                    FROM vehicle_detections
                     WHERE DATE(timestamp) BETWEEN '{start_date.strftime('%Y-%m-%d')}' AND '{end_date.strftime('%Y-%m-%d')}'
-                    GROUP BY vehicle_type
+                    GROUP BY DATE(timestamp), vehicle_type
+                    ORDER BY date
                 """
+                rows = query_db(query)
+
+                result = defaultdict(lambda: {"motor": 0, "mobil": 0, "bus": 0, "truk": 0, "total": 0, "smp": 0.0})
+
+                for row in rows:
+                    date = row["date"]
+                    vtype = row["vehicle_type"]
+                    count = row["count"]
+
+                    if vtype == "motorcycle":
+                        result[date]["motor"] += count
+                        result[date]["smp"] += count * 0.5
+                    elif vtype == "car":
+                        result[date]["mobil"] += count
+                        result[date]["smp"] += count * 1
+                    elif vtype in ["bus"]:
+                        result[date]["bus"] += count
+                        result[date]["smp"] += count * 1.3
+                    elif vtype in ["truck"]:
+                        result[date]["truk"] += count
+                        result[date]["smp"] += count * 1.3
+
+                    result[date]["total"] += count
+
+                data = [{"date": k, **v, "smp": round(v["smp"], 1)} for k, v in result.items()]
+                return make_response(data)
+
             except Exception as e:
-                return jsonify({"error": f"Invalid input: {str(e)}"}), 400
-    else:
-        return jsonify({"error": "Invalid scope"}), 400
-
-    result = query_db(query)
-    for item in result:
-        vtype = item['vehicle_type']
-        count = item['count']
-        if vtype == 'motorcycle':
-            item['smp'] = count * 0.5
-        elif vtype == 'car':
-            item['smp'] = count * 1
-        elif vtype == 'bus':
-            item['smp'] = count * 1.3
-        elif vtype == 'truck':
-            item['smp'] = count * 1.3
-        else:
-            item['smp'] = count
-    return make_response(result)
-
-@app.route('/api/vehicle_count/time_series', methods=['GET'])
-def vehicle_time_series():
-    type_ = request.args.get('type', 'hourly')
-
-    if type_ == 'hourly':
-        date_str = request.args.get('date')
-        if not date_str:
-            date_str = datetime.now().strftime('%Y-%m-%d')
-
-        query = f"""
-            SELECT HOUR(timestamp) as hour, vehicle_type, COUNT(*) as count 
-            FROM vehicle_detections 
-            WHERE DATE(timestamp) = '{date_str}' 
-            GROUP BY HOUR(timestamp)
-            ORDER BY hour
-        """
-        rows = query_db(query)
-    
-        if isinstance(rows, dict) and "error" in rows:
-            return make_response(rows)
-        
-        result = defaultdict(lambda: {"motor": 0, "mobil": 0, "bus": 0, "truk": 0, "total": 0, "smp": 0})
-        
-        for row in rows:
-            hour = row["hour"]
-            vtype = row["vehicle_type"]
-            count = row["count"]
+                return jsonify({"error": str(e)}), 400
             
-            if vtype == "motorcycle":
-                result[hour]["motor"] += count
-                result[hour]["smp"] += count * 0.5
-            elif vtype == "car":
-                result[hour]["mobil"] += count
-                result[hour]["smp"] += count * 1
-            elif vtype == "bus":
-                result[hour]["bus"] += count
-                result[hour]["smp"] += count * 1.3
-            elif vtype == "truck":
-                result[hour]["truk"] += count
-                result[hour]["smp"] += count * 1.3
-                
-            result[hour]["total"] += count
-        
-        data = []
-        for hour in range(24):
-            data.append({
-                "hour": hour,
-                "motor": result[hour]["motor"],
-                "mobil": result[hour]["mobil"], 
-                "bus": result[hour]["bus"],
-                "truk": result[hour]["truk"],
-                "total": result[hour]["total"],
-                "smp": round(result[hour]["smp"], 1)
-            })
-        
-        return make_response(data)
-    
-    # elif type_ == 'last_15min':
-    #     query = """
-    #         SELECT vehicle_type, COUNT(*) as count 
-    #         FROM vehicle_detections 
-    #         WHERE timestamp >= NOW() - INTERVAL 15 MINUTE 
-    #         GROUP BY vehicle_type
-    #     """
-    elif type_ == 'quarter':
-        try:
-            date_str = request.args.get('date')
-            if not date_str:
-                date_str = datetime.now().strftime('%Y-%m-%d')
-            
-            query = f"""
-                SELECT
-                    TIME_FORMAT(
-                        SEC_TO_TIME(
-                            FLOOR(TIME_TO_SEC(TIME(timestamp)) / 900) * 900
-                        ), 
-                        '%H:%i'
-                    ) as time_interval,
-                    vehicle_type,
-                    COUNT(*) as count
-                FROM vehicle_detections
-                WHERE DATE(timestamp) = '{date_str}'
-                GROUP BY time_interval, vehicle_type
-                ORDER BY time_interval
-            """
-            rows = query_db(query)
-
-            result = defaultdict(lambda: {"motor": 0, "mobil": 0, "bus": 0, "truk": 0, "total": 0, "smp": 0.0})
-
-            for row in rows:
-                interval = row["time_interval"]
-                vtype = row["vehicle_type"]
-                count = row["count"]
-
-                if vtype == "motorcycle":
-                    result[interval]["motor"] += count
-                    result[interval]["smp"] += count * 0.5
-                elif vtype == "car":
-                    result[interval]["mobil"] += count
-                    result[interval]["smp"] += count * 1
-                elif vtype == "bus":
-                    result[interval]["bus"] += count
-                    result[interval]["smp"] += count * 1.3
-                elif vtype == "truck":
-                    result[interval]["truk"] += count
-                    result[interval]["smp"] += count * 1.3
-
-                result[interval]["total"] += count
-
-            data = [{"time_interval": k, **v, "smp": round(v["smp"], 1)} for k, v in result.items()]
-            return make_response(data)
-
-        except Exception as e:
-            return jsonify({"error": str(e)}), 400
-
-    elif type_ == 'weekly':
-        try:
-            year = int(request.args.get('year'))
-            month = int(request.args.get('month'))
-            week = int(request.args.get('week'))
-
-            start_day = (week - 1) * 7 + 1
-            start_date = datetime(year, month, start_day)
+        elif type_ == 'monthly':
             try:
-                end_date = datetime(year, month, start_day + 6)
-            except ValueError:
-                if month == 12:
-                    end_date = datetime(year + 1, 1, 1) - timedelta(days=1)
-                else:
-                    end_date = datetime(year, month + 1, 1) - timedelta(days=1)
-
-            query = f"""
-                SELECT DATE(timestamp) as date,vehicle_type,COUNT(*) as count
-                FROM vehicle_detections
-                WHERE DATE(timestamp) BETWEEN '{start_date.strftime('%Y-%m-%d')}' AND '{end_date.strftime('%Y-%m-%d')}'
-                GROUP BY DATE(timestamp), vehicle_type
-                ORDER BY date
-            """
-            rows = query_db(query)
-
-            result = defaultdict(lambda: {"motor": 0, "mobil": 0, "bus": 0, "truk": 0, "total": 0, "smp": 0.0})
-
-            for row in rows:
-                date = row["date"]
-                vtype = row["vehicle_type"]
-                count = row["count"]
-
-                if vtype == "motorcycle":
-                    result[date]["motor"] += count
-                    result[date]["smp"] += count * 0.5
-                elif vtype == "car":
-                    result[date]["mobil"] += count
-                    result[date]["smp"] += count * 1
-                elif vtype in ["bus"]:
-                    result[date]["bus"] += count
-                    result[date]["smp"] += count * 1.3
-                elif vtype in ["truck"]:
-                    result[date]["truk"] += count
-                    result[date]["smp"] += count * 1.3
-
-                result[date]["total"] += count
-
-            data = [{"date": k, **v, "smp": round(v["smp"], 1)} for k, v in result.items()]
-            return make_response(data)
-
-        except Exception as e:
-            return jsonify({"error": str(e)}), 400
-        
-    elif type_ == 'monthly':
-        try:
-            year = int(request.args.get('year', datetime.now().year))
-            month = int(request.args.get('month', datetime.now().month))
-            
-            from calendar import monthrange
-            _, last_day = monthrange(year, month)
-            
-            start_date = f"{year}-{month:02d}-01"
-            end_date = f"{year}-{month:02d}-{last_day:02d}"
-            
-            query = f"""
-                SELECT 
-                    DATE(timestamp) as date,
-                    vehicle_type, 
-                    COUNT(*) as count
-                FROM vehicle_detections 
-                WHERE DATE(timestamp) BETWEEN '{start_date}' AND '{end_date}'
-                GROUP BY DATE(timestamp), vehicle_type
-                ORDER BY date
-            """
-            
-            rows = query_db(query)
-            
-            if isinstance(rows, dict) and "error" in rows:
-                return make_response(rows)
-            
-            result = defaultdict(lambda: {"motor": 0, "mobil": 0, "bus": 0, "truk": 0, "total": 0, "smp": 0.0})
-            
-            for row in rows:
-                date = row["date"]
-                vtype = row["vehicle_type"]
-                count = row["count"]
+                year = int(request.args.get('year', datetime.now().year))
+                month = int(request.args.get('month', datetime.now().month))
                 
-                if vtype == "motorcycle":
-                    result[date]["motor"] += count
-                    result[date]["smp"] += count * 0.5
-                elif vtype == "car":
-                    result[date]["mobil"] += count
-                    result[date]["smp"] += count *1
-                elif vtype in ["bus"]:
-                    result[date]["bus"] += count
-                    result[date]["smp"] += count * 1.3
-                elif vtype in ["truck"]:
-                    result[date]["truk"] += count
-                    result[date]["smp"] += count * 1.3
+                from calendar import monthrange
+                _, last_day = monthrange(year, month)
+                
+                start_date = f"{year}-{month:02d}-01"
+                end_date = f"{year}-{month:02d}-{last_day:02d}"
+                
+                query = f"""
+                    SELECT 
+                        DATE(timestamp) as date,
+                        vehicle_type, 
+                        COUNT(*) as count
+                    FROM vehicle_detections 
+                    WHERE DATE(timestamp) BETWEEN '{start_date}' AND '{end_date}'
+                    GROUP BY DATE(timestamp), vehicle_type
+                    ORDER BY date
+                """
+                
+                rows = query_db(query)
+                
+                if isinstance(rows, dict) and "error" in rows:
+                    return make_response(rows)
+                
+                result = defaultdict(lambda: {"motor": 0, "mobil": 0, "bus": 0, "truk": 0, "total": 0, "smp": 0.0})
+                
+                for row in rows:
+                    date = row["date"]
+                    vtype = row["vehicle_type"]
+                    count = row["count"]
                     
-                result[date]["total"] += count
-            
-            data = []
-            current_date = datetime(year, month, 1)
-            
-            for day in range(1, last_day + 1):
-                date_key = current_date.replace(day=day).date()
-                data.append({
-                    "date": date_key.strftime('%Y-%m-%d'),
-                    "day": day,
-                    "motor": result[date_key]["motor"],
-                    "mobil": result[date_key]["mobil"], 
-                    "bus": result[date_key]["bus"],
-                    "truk": result[date_key]["truk"],
-                    "total": result[date_key]["total"],
-                    "smp": round(result[date_key]["smp"], 1)
-                })
-            return make_response(data)
-            
-        except Exception as e:
-            return jsonify({"error": str(e)}), 400
+                    if vtype == "motorcycle":
+                        result[date]["motor"] += count
+                        result[date]["smp"] += count * 0.5
+                    elif vtype == "car":
+                        result[date]["mobil"] += count
+                        result[date]["smp"] += count *1
+                    elif vtype in ["bus"]:
+                        result[date]["bus"] += count
+                        result[date]["smp"] += count * 1.3
+                    elif vtype in ["truck"]:
+                        result[date]["truk"] += count
+                        result[date]["smp"] += count * 1.3
+                        
+                    result[date]["total"] += count
+                
+                data = []
+                current_date = datetime(year, month, 1)
+                
+                for day in range(1, last_day + 1):
+                    date_key = current_date.replace(day=day).date()
+                    data.append({
+                        "date": date_key.strftime('%Y-%m-%d'),
+                        "day": day,
+                        "motor": result[date_key]["motor"],
+                        "mobil": result[date_key]["mobil"], 
+                        "bus": result[date_key]["bus"],
+                        "truk": result[date_key]["truk"],
+                        "total": result[date_key]["total"],
+                        "smp": round(result[date_key]["smp"], 1)
+                    })
+                return make_response(data)
+                
+            except Exception as e:
+                return jsonify({"error": str(e)}), 400
 
-    elif type_ == 'history':
-        query = """
-            SELECT DATE(timestamp) as date, 
-                HOUR(timestamp) as hour, 
-                FLOOR(MINUTE(timestamp) / 15) * 15 as minute_interval, 
-                vehicle_type, 
-                COUNT(*) as count 
-            FROM vehicle_detections 
-            GROUP BY DATE(timestamp), HOUR(timestamp), minute_interval, vehicle_type
-            ORDER BY date, hour, minute_interval
-        """
-    else:
-        return jsonify({"error": "Invalid type parameter"}), 400
+        elif type_ == 'history':
+            query = """
+                SELECT DATE(timestamp) as date, 
+                    HOUR(timestamp) as hour, 
+                    FLOOR(MINUTE(timestamp) / 15) * 15 as minute_interval, 
+                    vehicle_type, 
+                    COUNT(*) as count 
+                FROM vehicle_detections 
+                GROUP BY DATE(timestamp), HOUR(timestamp), minute_interval, vehicle_type
+                ORDER BY date, hour, minute_interval
+            """
+        else:
+            return jsonify({"error": "Invalid type parameter"}), 400
 
-    return make_response(result)
+        return make_response(result)
+    except Exception as e:
+        app.logger.error(f"Error in vehicle_time_series: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/api/video_feed')
-def video_feed():
-    if not running['running']:
-        abort(403, "Detection is not running.")
-    return Response(detect(running),mimetype='multipart/x-mixed-replace; boundary=frame')
+@token_required
+def video_feed(payload):
+    try:
+        if not running['running']:
+            abort(403, "Detection is not running.")
+        return Response(detect(running),mimetype='multipart/x-mixed-replace; boundary=frame')
+    except Exception as e:
+        app.logger.error(f"Error in video_feed: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
 
 running = {'running': False}
-
 @app.route('/api/start_detection', methods=['POST'])
-def start_detection():
-    if running['running']:
-        return jsonify({"message": "Detection already running"}), 400
+@token_required
+def start_detection(payload):
+    try:
+        if running['running']:
+            return jsonify({"message": "Detection already running"}), 400
 
-    running['running'] = True
-    return jsonify({"message": "Detection started"}), 200
+        running['running'] = True
+        return jsonify({"message": "Detection started"}), 200
+    except Exception as e:
+        app.logger.error(f"Error starting detection: {str(e)}")
+        running['running'] = False
+        return jsonify({"error": "Failed to start detection"}), 500
 
 @app.route('/api/stop_detection', methods=['POST'])
-def stop_detection():
-    if not running['running']:
-        return jsonify({"message": "Detection not running"}), 400
+@token_required
+def stop_detection(payload):
+    try:
+        if not running['running']:
+            return jsonify({"message": "Detection not running"}), 400
 
-    running['running'] = False
-    return jsonify({"message": "Detection stopped"}), 200
+        running['running'] = False
+        return jsonify({"message": "Detection stopped"}), 200
+    except Exception as e:
+        app.logger.error(f"Error stopping detection: {str(e)}")
+        running['running'] = True
+        return jsonify({"error": "Failed to stop detection"}), 500
 
 from helper.reportGenerator import generate_report_pdf
-import os
 
 @app.route('/api/download_report/pdf', methods=['GET'])
 def download_report_pdf():

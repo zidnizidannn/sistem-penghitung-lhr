@@ -18,7 +18,17 @@ const History = () => {
         fetchHistoryData();
     }, [activeView]);
 
-    const api= 'http://localhost:5000/api';
+    const api = axios.create({
+        baseURL: 'http://localhost:5000/api',
+    });
+
+    api.interceptors.request.use((config) => {
+        const token = localStorage.getItem('token');
+        if (token) {
+            config.headers['Authorization'] = `Bearer ${token}`;
+        }
+        return config;
+    });
 
     const fetchHistoryData = async () => {
         setIsLoading(true);
@@ -28,22 +38,22 @@ const History = () => {
             const dateParam = `&date=${selectedDate}`;
     
             if (activeView === "daily") {
-                timeSeriesEndpoint = `${api}/vehicle_count/time_series?type=hourly${dateParam}`;
-                summaryEndpoint = `${api}/vehicle_count/summary?scope=custom&date=${selectedDate}`;
+                timeSeriesEndpoint = `/vehicle_count/time_series?type=hourly${dateParam}`;
+                summaryEndpoint = `/vehicle_count/summary?scope=custom&date=${selectedDate}`;
             } else if (activeView === "weekly") {
                 const query = `&year=${selectedYear}&month=${selectedMonth}&week=${selectedWeek}`;
-                timeSeriesEndpoint = `${api}/vehicle_count/time_series?type=weekly${query}`;
-                summaryEndpoint = `${api}/vehicle_count/summary?scope=custom${query}`;
+                timeSeriesEndpoint = `/vehicle_count/time_series?type=weekly${query}`;
+                summaryEndpoint = `/vehicle_count/summary?scope=custom${query}`;
             } else if (activeView === "monthly") {
                 const query = `&year=${selectedMonthlyYear}&month=${selectedMonthlyMonth}`;
-                timeSeriesEndpoint = `${api}/vehicle_count/time_series?type=monthly${query}`;
-                summaryEndpoint = `${api}/vehicle_count/summary?scope=monthly${query}`;
+                timeSeriesEndpoint = `/vehicle_count/time_series?type=monthly${query}`;
+                summaryEndpoint = `/vehicle_count/summary?scope=monthly${query}`;
             } if (activeView === "quarter") {
-                timeSeriesEndpoint = `${api}/vehicle_count/time_series?type=quarter${dateParam}`;
-                summaryEndpoint = `${api}/vehicle_count/summary?scope=custom&date=${selectedDate}`;
+                timeSeriesEndpoint = `/vehicle_count/time_series?type=quarter${dateParam}`;
+                summaryEndpoint = `/vehicle_count/summary?scope=custom&date=${selectedDate}`;
             }
     
-            const timeSeriesRes = await axios.get(timeSeriesEndpoint);
+            const timeSeriesRes = await api.get(timeSeriesEndpoint);
             let processedData = [];
             let grafikData = [];
     
@@ -138,7 +148,7 @@ const History = () => {
             }
 
             
-            const summaryRes = await axios.get(summaryEndpoint);
+            const summaryRes = await api.get(summaryEndpoint);
             const totalSMP = summaryRes.data.reduce((sum, item) => sum + (item.smp || 0), 0);
             const totalKendaraan = summaryRes.data.reduce((sum, item) => sum + item.count, 0);
     
@@ -152,6 +162,10 @@ const History = () => {
     
         } catch (error) {
             console.error("Error fetching history data:", error);
+            if (error.response?.status === 401) {
+                localStorage.removeItem('token');
+                window.location.href = '/login';
+            }
         } finally {
             setIsLoading(false);
         }

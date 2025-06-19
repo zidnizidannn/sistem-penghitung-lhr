@@ -6,6 +6,7 @@ from helper.conn import conn as db_query
 
 model = YOLO("./yolov8/train4/weights/best.pt")
 VIDEO_SOURCE = "http://61.211.241.239/nphMotionJpeg?Resolution=1920&Quality=Standard"
+# VIDEO_SOURCE = "./yolov8/cctv1.mp4"
 
 vehicle_classes = {
     0: "bus",
@@ -22,10 +23,15 @@ def detect(running_ref):
         return
 
     print("[INFO] Deteksi dan streaming dimulai...")
-
+    
+    W = 640
+    H = 360
+    prev_time = time.time()
+    
     object_tracks = {}  # Simpan posisi center_y sebelumnya
     counted_objects = set()
-    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    # frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    frame_height = H
     LINE_Y = int(frame_height * 0.8)
     
     print(f"[DEBUG] Frame height: {frame_height}, Counting line Y: {LINE_Y}")
@@ -37,7 +43,8 @@ def detect(running_ref):
 
         if frame.shape[2] == 4:
             frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2RGB)
-
+            
+        frame = cv2.resize(frame, (W, H))    
         results = model.track(frame, persist=True, conf=0.4)
 
         if results and results[0].boxes.id is not None:
@@ -92,9 +99,18 @@ def detect(running_ref):
         cv2.line(frame, (0, LINE_Y), (frame.shape[1], LINE_Y), (0, 0, 255), 3)
         cv2.putText(frame, f'Garis hitung', (10, LINE_Y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
+        # Hitung FPS
+        curr_time = time.time()
+        fps = 1 / (curr_time - prev_time)
+        prev_time = curr_time
+
+        # Tampilkan FPS di frame
+        cv2.putText(frame, f'FPS: {fps:.2f}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+
         # Encode frame dan kirim ke frontend
         ret, buffer = cv2.imencode('.jpg', frame)
         frame_bytes = buffer.tobytes()
+
         yield (b'--frame\r\n'b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
         time.sleep(0.1)

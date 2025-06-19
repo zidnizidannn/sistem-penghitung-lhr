@@ -13,19 +13,30 @@ const Dashboard = () => {
         grafikData: []
     });
 
+    const api = axios.create({
+        baseURL: 'http://localhost:5000/api',
+    });
+
+    api.interceptors.request.use((config) => {
+        const token = localStorage.getItem('token');
+        if (token) {
+            config.headers['Authorization'] = `Bearer ${token}`;
+        }
+        return config;
+    });
     useEffect(() => {
         const fetchData = async () => {
             try {
                 // total kendaraan hari ini
-                const todayRes = await axios.get("http://localhost:5000/api/vehicle_count/summary?scope=today");
+                const todayRes = await api.get(`/vehicle_count/summary?scope=today`);
                 const totalHariIni = todayRes.data.reduce((sum, item) => sum + (item.smp || 0), 0);
     
                 // total kendaraan kemarin
-                const yesterdayRes = await axios.get("http://localhost:5000/api/vehicle_count/summary?scope=yesterday");
+                const yesterdayRes = await api.get(`/vehicle_count/summary?scope=yesterday`);
                 const totalKemarin = yesterdayRes.data.reduce((sum, item) => sum + (item.smp || 0), 0);
     
                 // data grafik per jam hari ini
-                const grafikRes = await axios.get("http://localhost:5000/api/vehicle_count/time_series?type=hourly");
+                const grafikRes = await api.get(`/vehicle_count/time_series?type=hourly`);
                 const grafikData = Array.isArray(grafikRes.data)
                     ? grafikRes.data
                         .filter(item => item.hour !== undefined)
@@ -45,7 +56,7 @@ const Dashboard = () => {
                 const persentasePerubahan = totalKemarin === 0 ? 0 : Math.round((perubahan / totalKemarin) * 100);
     
                 // data historis (per 15 menit) untuk cari jam sibuk
-                const hourlyRes = await axios.get("http://localhost:5000/api/vehicle_count/time_series?type=hourly");
+                const hourlyRes = await api.get(`/vehicle_count/time_series?type=hourly`);
                 const hourlyData = hourlyRes.data;
 
                 let jamSibuk = "00:00 - 00:00";

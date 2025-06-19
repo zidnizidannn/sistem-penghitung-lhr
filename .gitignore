@@ -1,4 +1,6 @@
 .vscode
+.env
+generate_user.py
 backend/venv/
 backend/coba/
 backend/yolovn.pt
